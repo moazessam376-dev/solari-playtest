@@ -129,7 +129,7 @@ async def run_agent(
         pass
     return {
         "meta": {
-            "target": target_url,
+            "target": target_url.split("?")[0],
             "mode": "agent",
             "steps": len(history.history),
             "seconds": round(time.time() - t0),
