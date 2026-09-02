@@ -75,7 +75,7 @@ async def run_agent(
     @bu.action(
         "Read the UI: interactive controls with centre coordinates, panel-like containers with rects and open state, and visible text."
     )
-    async def ui() -> str:
+    async def ui(note: str = "") -> str:  # `note` exists only so the schema is not empty
         t = await _t()
         return json.dumps(
             {
@@ -88,7 +88,7 @@ async def run_agent(
     @bu.action(
         "Snapshot of the game state: DOM hash, open panels with sizes, console error count, fps, canvas colour count. Call before and after an action and compare."
     )
-    async def state() -> str:
+    async def state(note: str = "") -> str:
         t = await _t()
         return json.dumps((await t.snapshot(with_fps=True, with_canvas=True)).as_dict())
 
@@ -103,7 +103,7 @@ async def run_agent(
         return json.dumps(await t.press(key))
 
     @bu.action("Console errors and exceptions collected so far.")
-    async def console_errors() -> str:
+    async def console_errors(note: str = "") -> str:
         t = await _t()
         return json.dumps(t.console_errors()[-20:])
 
