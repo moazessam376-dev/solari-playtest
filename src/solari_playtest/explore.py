@@ -263,6 +263,34 @@ class Explorer:
                     self.controls.append(c)
                     self.progress("control", c.label())
                 base = await self.reset()
+        # canvas hotspots: games draw their world in WebGL, so click a grid of points
+        # and keep the first point that opens each distinct panel
+        rect = await self.t.g.evaluate(
+            "(() => { const c = document.querySelector('canvas'); if (!c) return null; const r = c.getBoundingClientRect(); return {x: r.x, y: r.y, w: r.width, h: r.height}; })()"
+        )
+        if rect and rect["w"] > 200 and rect["h"] > 200:
+            cols, rows = 7, 5
+            seen_panels: set[str] = {o for c in self.controls for o in c.opens}
+            for j in range(rows):
+                for i in range(cols):
+                    x = rect["x"] + rect["w"] * (i + 0.5) / cols
+                    y = rect["y"] + rect["h"] * (j + 0.5) / rows
+                    await self.t.click(x, y)
+                    await asyncio.sleep(self.settle)
+                    after = await self.t.snapshot()
+                    opened, _ = _diff_open(base, after)
+                    new = [o for o in opened if o not in seen_panels]
+                    if new:
+                        c = Control(
+                            "canvas", f"canvas@({int(x)},{int(y)})", {"click_xy": [int(x), int(y)]}, new, []
+                        )
+                        for sel in new:
+                            self.reference.setdefault(sel, _open_map(after)[sel])
+                            seen_panels.add(sel)
+                        self.controls.append(c)
+                        self.progress("control", c.label())
+                    if opened:
+                        base = await self.reset()
         # nested: things inside an open panel that open another panel (rows, cards)
         for parent in list(self.controls):
             if not parent.opens:
@@ -271,7 +299,7 @@ class Explorer:
             with_parent = await self.t.snapshot()
             items = []
             for sel in parent.opens:
-                items += await self.t.clickables_in(sel, limit=6)
+                items += await self.t.clickables_in(sel, limit=10)
             for it in items:
                 await self.t.click(it["x"], it["y"])
                 await asyncio.sleep(self.settle)

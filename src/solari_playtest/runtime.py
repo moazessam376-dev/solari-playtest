@@ -294,6 +294,7 @@ class Browser:
             height,
             run_dir=run_dir or Path("runs") / time.strftime("%Y%m%d-%H%M%S"),
         )
+        game.cdp_endpoint = s.cdp_endpoint
         cdp.on_event(lambda m: self._observe(game, m))
         await cdp.send("Page.navigate", {"url": url}, session_id=page)
         for _ in range(60):

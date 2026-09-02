@@ -244,18 +244,20 @@ class Tools:
         js = rf"""(() => {{ const root = document.querySelector({json.dumps(container_sel)}); if (!root) return [];
           const out = []; const seen = new Set();
           for (const el of root.querySelectorAll('*')) {{
-            if (out.length >= {limit}) break;
+            if (out.length >= {limit} * 4) break;
             const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
             if (r.width < 8 || r.height < 8 || cs.display === 'none' || cs.visibility === 'hidden') continue;
-            const clicky = cs.cursor === 'pointer' || el.tagName === 'BUTTON' || el.hasAttribute('draggable') || /row|item|card|entry/.test(el.className);
+            const rowish = /row|item|card|entry|tile|slot/.test(el.className) || el.hasAttribute('draggable') || el.tagName === 'LI' || el.tagName === 'TR';
+            const clicky = rowish || cs.cursor === 'pointer' || el.tagName === 'BUTTON';
             if (!clicky) continue;
             if ([...seen].some(p => p.contains(el))) continue;  // keep the outermost clickable
             seen.add(el);
             const text = (el.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 40);
             if (/^[✕×x]$/.test(text)) continue;
-            out.push({{ sel: el.tagName.toLowerCase() + [...el.classList].slice(0, 3).map(c => '.' + c).join(''), text, x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), w: Math.round(r.width), h: Math.round(r.height) }});
+            out.push({{ sel: el.tagName.toLowerCase() + [...el.classList].slice(0, 3).map(c => '.' + c).join(''), text, x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), w: Math.round(r.width), h: Math.round(r.height), rowish, button: el.tagName === 'BUTTON' }});
           }}
-          return out; }})()"""
+          out.sort((a, b) => (b.rowish - a.rowish) || (a.button - b.button));
+          return out.slice(0, {limit}); }})()"""
         return await self.g.evaluate(js) or []
 
     async def measure(self, selector: str) -> dict[str, Any] | None:

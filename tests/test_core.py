@@ -44,6 +44,9 @@ class FakeGame:
     def __init__(self):
         self.console: list = []
 
+    async def evaluate(self, js):
+        return None  # no canvas in the fake
+
 
 class FakeTools:
     """Scripted game: 'r' toggles the roster; after the mixed sequence it comes back 8 px tall."""
