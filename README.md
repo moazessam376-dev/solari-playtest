@@ -36,6 +36,18 @@ Before declaring a UI change done, call playtest_run on this repo and fix every 
 
 Tools: `playtest_run` (everything in one call, returns the Markdown report), `playtest_open`, `playtest_screenshot`, `playtest_press`, `playtest_click`, `playtest_drag`, `playtest_type`, `playtest_wait`, `playtest_ui` (controls with coordinates, panels with rects), `playtest_measure` (why is this panel tiny), `playtest_state`, `playtest_console`, `playtest_smoke`, `playtest_discover`, `playtest_ui_stress`, `playtest_report`, `playtest_close`. With the primitives, the coding agent itself can play the game: read the UI, press keys, watch what changed, and write its own findings.
 
+## Results on a real game
+
+Target: a private Vite + three.js shelter sim with DOM panels on both rails and single-key shortcuts, built from git in a Solari sandbox at a pinned commit. The developer knew of one bug and gave no hints.
+
+| | |
+|---|---|
+| Controls discovered | 28 keys and clicks, plus one nested row control inside the roster |
+| Sequences run | 128, across 8 browser-session restarts (Solari drops raw-CDP sessions after ~10 min; the runtime reopens and redoes the step) |
+| Findings | 1 high, 1 low |
+
+The high finding is the known bug, found unaided: the roster panel reopens at 320×4 px after another right-rail panel was opened, the roster collapsed, two other panels cycled, and the roster reopened by clicking a row. Confirmed from a fresh load. The evidence names the rail (`div.rightrail`), the computed layout (`flex: 1 1 0%`, `min-height: 0`), and the sibling heights that still hold space while closed, which is enough for a coding agent to fix it without opening a browser. Three panels that were still sliding in when measured were first reported as off-viewport; the check now waits for the transition to settle, and a unit test covers the case.
+
 ## Hints, optional
 
 A `playtest.yaml` next to the game narrows the probe without replacing it:
@@ -53,7 +65,7 @@ serve_dir: dist
 
 ## Requirements and limits
 
-Python 3.11+. WebGL on Solari is software rendered (Mesa llvmpipe), so frame rates are lower than on a GPU; the report says so. Canvas-only interactions (clicking things drawn in WebGL) are not discovered by the deterministic pass; the MCP primitives let the coding agent do those by hand, and the autonomous runner (browser-use on `SolariBrowser`) is coming next.
+Python 3.11+. WebGL on Solari is software rendered (Mesa llvmpipe), so frame rates are lower than on a GPU; the report says so. Canvas-only interactions (clicking things drawn in WebGL) are not discovered by the deterministic pass; the MCP primitives let the coding agent do those by hand, and the autonomous runner (`playtest run --agent`, browser-use on `SolariBrowser` with the same primitives registered as tools) handles those with a model in the loop.
 
 ## License
 
