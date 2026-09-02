@@ -11,6 +11,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from .runtime import SessionLost
 from .tools import PANEL_SELECTOR, Snapshot, Tools
 
 PROBE_KEYS = [
@@ -335,7 +336,8 @@ class Explorer:
         for sel, p in open_now.items():
             ref = self.reference.get(sel)
             shots: list[str] = []
-            if p["h"] < MIN_USABLE or p["w"] < MIN_USABLE:
+            clipped = p.get("scrollH", 0) > p["h"] + 4  # content does not fit: the panel is really too small
+            if (p["h"] < MIN_USABLE or p["w"] < MIN_USABLE) and (clipped or p["h"] < 40 or p["w"] < 40):
                 shots.append(await self.t.screenshot(f"unusable {sel}"))
                 m = await self.t.measure(
                     sel.split("#")[0].split(".", 1)[0] + "." + ".".join(sel.split(".")[1:])
@@ -360,7 +362,7 @@ class Explorer:
                     shots,
                     confirmed=reproduced,
                 )
-            elif ref and focus == sel and p["h"] < ref["h"] * 0.8:
+            elif ref and focus == sel and p["h"] < ref["h"] * 0.8 and clipped:
                 shots.append(await self.t.screenshot(f"shrunk {sel}"))
                 self._finding(
                     "medium",
@@ -422,34 +424,49 @@ class Explorer:
         # the mixed triples are where real layouts break; run them first so a cap never drops them
         seqs = sorted(seqs, key=lambda q: -len(q))[:max_sequences]
         by_label = {c.label(): c for c in toggles}
-        for i, seq in enumerate(seqs):
+        i = 0
+        lost = 0
+        while i < len(seqs):
+            seq = seqs[i]
             self.progress("sequence", f"{i + 1}/{len(seqs)}")
-            if self.fresh is not None and i % 8 == 0:
-                await self.fresh()
-                self.history = []
-            await self.reset()
-            errors_before = len([e for e in self.t.g.console if e.level != "warning"])
-            steps: list[dict[str, Any]] = []
-            focus: str | None = None
-            for item in seq:
-                if isinstance(item, str):  # "~key:r" close via its own toggle
-                    ctl = by_label[item[1:]]
-                    if ctl.toggles:
-                        await self._do(ctl.action)
-                        steps.append({"action": ctl.action, "intent": f"close via {ctl.label()}"})
+            try:
+                if self.fresh is not None and (i % 8 == 0 or lost):
+                    await self.fresh()
+                    self.history = []
+                    lost = 0
+                await self.reset()
+                errors_before = len([e for e in self.t.g.console if e.level != "warning"])
+                steps: list[dict[str, Any]] = []
+                focus: str | None = None
+                for item in seq:
+                    if isinstance(item, str):  # "~key:r" close via its own toggle
+                        ctl = by_label[item[1:]]
+                        if ctl.toggles:
+                            await self._do(ctl.action)
+                            steps.append({"action": ctl.action, "intent": f"close via {ctl.label()}"})
+                        else:
+                            await self._do({"close_panel": ctl.opens[0]})
+                            steps.append(
+                                {"action": {"close_panel": ctl.opens[0]}, "intent": f"close {ctl.opens[0]}"}
+                            )
+                        focus = None
                     else:
-                        await self._do({"close_panel": ctl.opens[0]})
+                        await self._do(item.action)
                         steps.append(
-                            {"action": {"close_panel": ctl.opens[0]}, "intent": f"close {ctl.opens[0]}"}
+                            {
+                                "action": item.action,
+                                "intent": f"open {', '.join(item.opens)} via {item.label()}",
+                            }
                         )
-                    focus = None
-                else:
-                    await self._do(item.action)
-                    steps.append(
-                        {"action": item.action, "intent": f"open {', '.join(item.opens)} via {item.label()}"}
-                    )
-                    focus = item.opens[0] if item.opens else None
-                await self._check(steps, focus, errors_before)
+                        focus = item.opens[0] if item.opens else None
+                    await self._check(steps, focus, errors_before)
+                i += 1
+            except SessionLost:
+                lost += 1
+                self.progress("sequence", f"session lost during {i + 1}, restarted; redoing it")
+                if lost > 2:
+                    i += 1  # do not loop forever on one sequence
+                    lost = 0
         return self.findings
 
     # --- smoke -------------------------------------------------------------------------

@@ -86,8 +86,10 @@ class FakeTools:
     async def snapshot(self, **k):
         panels = []
         for sel, is_open in self.open.items():
-            h = 8 if (sel == "div.roster" and is_open and self.broken) else 400
-            panels.append(_panel(sel, h=h, open=is_open))
+            broken = sel == "div.roster" and is_open and self.broken
+            p = _panel(sel, h=8 if broken else 400, open=is_open)
+            p["scrollH"] = 400  # the roster always has a full list of rows to show
+            panels.append(p)
         dom = "".join(f"{s}{int(o)}" for s, o in self.open.items())
         return Snapshot(0, dom, panels, 0, "u")
 

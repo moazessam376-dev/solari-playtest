@@ -138,6 +138,10 @@ class SandboxBuilder:
 # --- browser: open and observe ----------------------------------------------------
 
 
+class SessionLost(RuntimeError):
+    """The Solari browser session disappeared mid-run; a fresh one is open."""
+
+
 @dataclass
 class ConsoleEntry:
     level: str
@@ -161,6 +165,8 @@ class Game:
 
     cdp_endpoint: str = ""
     recoveries: int = 0
+    restarts: int = 0
+    reopen: Any = None  # async callable set by Browser.open: new session on the same URL
 
     async def recover(self) -> None:
         """The gateway sometimes drops the CDP websocket mid-session while the
@@ -295,6 +301,42 @@ class Browser:
             run_dir=run_dir or Path("runs") / time.strftime("%Y%m%d-%H%M%S"),
         )
         game.cdp_endpoint = s.cdp_endpoint
+
+        async def reopen() -> None:
+            try:
+                await game.cdp.close()
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                await self.c.release_session(game.session_id)
+            except SolariError:
+                pass
+            s2 = await self.c.create_session(recording=recording)
+            self.session_id = s2.id
+            c2 = CDP(s2.cdp_endpoint, timeout_s=30)
+            await c2.connect()
+            page2 = await c2.new_page()
+            await c2.send(
+                "Emulation.setDeviceMetricsOverride",
+                {"width": width, "height": height, "deviceScaleFactor": 1, "mobile": False},
+                session_id=page2,
+            )
+            for dom in ("Page", "Runtime", "Log"):
+                await c2.send(f"{dom}.enable", session_id=page2)
+            c2.on_event(lambda m: Browser._observe(game, m))
+            await c2.send("Page.navigate", {"url": url}, session_id=page2)
+            for _ in range(60):
+                if await c2.evaluate(page2, "document.readyState") == "complete":
+                    break
+                await asyncio.sleep(0.25)
+            await asyncio.sleep(1.0)
+            game.cdp, game.page, game.session_id, game.cdp_endpoint = c2, page2, s2.id, s2.cdp_endpoint
+            game.console.append(
+                ConsoleEntry("warning", "playtest: browser session lost; opened a new one", time.time())
+            )
+            self._cdp = c2
+
+        game.reopen = reopen
         cdp.on_event(lambda m: self._observe(game, m))
         await cdp.send("Page.navigate", {"url": url}, session_id=page)
         for _ in range(60):
