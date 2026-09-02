@@ -18,7 +18,7 @@ from typing import Any
 import httpx
 from PIL import Image
 
-from .cdp import CDP
+from .cdp import CDP, CDPError
 from .client import SolariClient, SolariError
 
 GIT_URL = re.compile(r"^(https?://|git@)[^\s]+?(\.git)?/?$")
@@ -159,14 +159,64 @@ class Game:
     run_dir: Path = field(default_factory=lambda: Path("runs") / time.strftime("%Y%m%d-%H%M%S"))
     shots: int = 0
 
+    cdp_endpoint: str = ""
+    recoveries: int = 0
+
+    async def recover(self) -> None:
+        """The gateway sometimes drops the CDP websocket mid-session while the
+        browser itself stays alive. Reconnect and re-attach to the page."""
+        try:
+            await self.cdp.close()
+        except Exception:  # noqa: BLE001
+            pass
+        c = CDP(self.cdp_endpoint, timeout_s=30)
+        await c.connect()
+        targets = await c.send("Target.getTargets")
+        pages = [
+            t
+            for t in targets.get("targetInfos", [])
+            if t.get("type") == "page" and not t.get("url", "").startswith("chrome")
+        ]
+        if not pages:
+            self.page = await c.new_page(self.url)
+        else:
+            self.page = (
+                await c.send("Target.attachToTarget", {"targetId": pages[0]["targetId"], "flatten": True})
+            )["sessionId"]
+        for dom in ("Page", "Runtime", "Log"):
+            await c.send(f"{dom}.enable", session_id=self.page)
+        c.on_event(lambda m: Browser._observe(self, m))
+        self.cdp = c
+        self.recoveries += 1
+        self.console.append(
+            ConsoleEntry("warning", "playtest: CDP connection dropped and was re-established", time.time())
+        )
+
+    async def send(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        """CDP call on the page with one automatic recovery on a dropped socket."""
+        try:
+            return await self.cdp.send(method, params, session_id=self.page)
+        except (TimeoutError, CDPError, OSError) as err:
+            if (
+                "closed" not in str(err).lower()
+                and "not connected" not in str(err).lower()
+                and not isinstance(err, asyncio.TimeoutError)
+            ):
+                raise
+            await self.recover()
+            return await self.cdp.send(method, params, session_id=self.page)
+
     async def evaluate(self, js: str) -> Any:
-        return await self.cdp.evaluate(self.page, js)
+        res = await self.send(
+            "Runtime.evaluate", {"expression": js, "returnByValue": True, "awaitPromise": True}
+        )
+        return res.get("result", {}).get("value")
 
     async def screenshot(self, label: str = "shot", clip: dict[str, Any] | None = None) -> Path:
         params: dict[str, Any] = {"format": "png"}
         if clip:
             params["clip"] = {**clip, "scale": 1}
-        res = await self.cdp.send("Page.captureScreenshot", params, session_id=self.page)
+        res = await self.send("Page.captureScreenshot", params)
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.shots += 1
         path = self.run_dir / f"{self.shots:03d}-{re.sub(r'[^a-z0-9]+', '-', label.lower())[:40]}.png"

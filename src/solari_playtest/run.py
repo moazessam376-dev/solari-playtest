@@ -36,6 +36,8 @@ async def playtest(
     build_cmd: str | None = None,
     serve_dir: str = "dist",
     keep_sandbox: bool = False,
+    agent: bool = False,
+    agent_steps: int = 60,
     progress: Callable[[str, str], None] | None = None,
 ) -> dict[str, Any]:
     progress = progress or (lambda *_: None)
@@ -99,17 +101,30 @@ async def playtest(
             controls = await ex.discover(keys=hints.get("keys"), buttons=hints.get("buttons", True))
             progress("discover", f"{len(controls)} controls: " + ", ".join(c.label() for c in controls))
             progress("stress", "running open/close sequences")
-            await ex.ui_stress(depth=depth, max_sequences=max_sequences)
+            try:
+                await ex.ui_stress(depth=depth, max_sequences=max_sequences)
+            except Exception as err:  # noqa: BLE001 - keep what was found
+                meta["aborted"] = f"{type(err).__name__}: {str(err)[:200]}"
+                progress("stress", f"aborted: {meta['aborted']}")
             sequences = min(max_sequences, _count_sequences(len([c for c in controls if c.opens]), depth))
+            meta["cdp_recoveries"] = game.recoveries
         finally:
             sid = await browser.close()
             meta["replay_url"] = await browser.replay_url(sid) if sid else None
+        agent_run: dict[str, Any] | None = None
+        if agent:
+            from .agent import run_agent
+
+            progress("agent", "autonomous browser-use pass")
+            agent_run = await run_agent(url, hints=hints, out=out, max_steps=agent_steps, viewport=viewport)
+            progress("agent", f"{len(agent_run['findings'])} finding(s) in {agent_run['meta']['seconds']}s")
         run = {
             "meta": meta,
             "controls": [{"label": c.label(), **c.__dict__} for c in ex.controls],
             "sequences": sequences,
-            "findings": [f.as_dict() for f in ex.findings],
+            "findings": [f.as_dict() for f in ex.findings] + (agent_run["findings"] if agent_run else []),
             "actions": tools.log.steps,
+            "agent": agent_run,
         }
         write_json(out / "report.json", run)
         write_markdown(out / "report.md", run)

@@ -130,17 +130,15 @@ class Tools:
             params: dict[str, Any] = {"type": "keyDown", "key": name, "code": code}
             if text:
                 params["text"] = text
-            await self.g.cdp.send("Input.dispatchKeyEvent", params, session_id=self.g.page)
+            await self.g.send("Input.dispatchKeyEvent", params)
             await asyncio.sleep(hold_ms / 1000)
-            await self.g.cdp.send(
-                "Input.dispatchKeyEvent", {"type": "keyUp", "key": name, "code": code}, session_id=self.g.page
-            )
+            await self.g.send("Input.dispatchKeyEvent", {"type": "keyUp", "key": name, "code": code})
             await asyncio.sleep(0.05)
         self.log.add("press", key=key, repeat=repeat)
         return {"pressed": key, "repeat": repeat}
 
     async def type_text(self, text: str) -> dict[str, Any]:
-        await self.g.cdp.send("Input.insertText", {"text": text}, session_id=self.g.page)
+        await self.g.send("Input.insertText", {"text": text})
         self.log.add("type", text=text)
         return {"typed": text}
 
@@ -170,22 +168,19 @@ class Tools:
                 "button": button if t != "mouseMoved" else "none",
                 "clickCount": 1,
             }
-            await self.g.cdp.send("Input.dispatchMouseEvent", p, session_id=self.g.page)
+            await self.g.send("Input.dispatchMouseEvent", p)
             await asyncio.sleep(0.03)
         self.log.add("click", x=round(x), y=round(y), selector=selector, text=text, button=button)
         return {"clicked": True, "x": round(x), "y": round(y)}
 
     async def drag(self, x0: float, y0: float, x1: float, y1: float, steps: int = 12) -> dict[str, Any]:
-        await self.g.cdp.send(
-            "Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x0, "y": y0}, session_id=self.g.page
-        )
-        await self.g.cdp.send(
+        await self.g.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x0, "y": y0})
+        await self.g.send(
             "Input.dispatchMouseEvent",
             {"type": "mousePressed", "x": x0, "y": y0, "button": "left", "clickCount": 1},
-            session_id=self.g.page,
         )
         for i in range(1, steps + 1):
-            await self.g.cdp.send(
+            await self.g.send(
                 "Input.dispatchMouseEvent",
                 {
                     "type": "mouseMoved",
@@ -193,22 +188,18 @@ class Tools:
                     "y": y0 + (y1 - y0) * i / steps,
                     "button": "left",
                 },
-                session_id=self.g.page,
             )
             await asyncio.sleep(0.02)
-        await self.g.cdp.send(
+        await self.g.send(
             "Input.dispatchMouseEvent",
             {"type": "mouseReleased", "x": x1, "y": y1, "button": "left", "clickCount": 1},
-            session_id=self.g.page,
         )
         self.log.add("drag", frm=[round(x0), round(y0)], to=[round(x1), round(y1)])
         return {"dragged": True}
 
     async def scroll(self, x: float, y: float, dy: float) -> dict[str, Any]:
-        await self.g.cdp.send(
-            "Input.dispatchMouseEvent",
-            {"type": "mouseWheel", "x": x, "y": y, "deltaX": 0, "deltaY": dy},
-            session_id=self.g.page,
+        await self.g.send(
+            "Input.dispatchMouseEvent", {"type": "mouseWheel", "x": x, "y": y, "deltaX": 0, "deltaY": dy}
         )
         self.log.add("scroll", x=round(x), y=round(y), dy=dy)
         return {"scrolled": dy}

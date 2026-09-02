@@ -391,7 +391,8 @@ class Explorer:
                 seqs.append(
                     [a, b, "~" + a.label(), "~" + b.label(), b, c, "~" + b.label(), "~" + c.label(), a]
                 )
-        seqs = seqs[:max_sequences]
+        # the mixed triples are where real layouts break; run them first so a cap never drops them
+        seqs = sorted(seqs, key=lambda q: -len(q))[:max_sequences]
         by_label = {c.label(): c for c in toggles}
         for i, seq in enumerate(seqs):
             self.progress("sequence", f"{i + 1}/{len(seqs)}")

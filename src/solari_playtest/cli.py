@@ -52,6 +52,10 @@ def run(
     max_sequences: int = typer.Option(80, "--max-sequences"),
     build_cmd: str | None = typer.Option(None, "--build-cmd"),
     keep_sandbox: bool = typer.Option(False, "--keep-sandbox"),
+    agent: bool = typer.Option(
+        False, "--agent", help="Also run the autonomous browser-use pass (needs an LLM key)."
+    ),
+    agent_steps: int = typer.Option(60, "--agent-steps"),
 ) -> None:
     """Build, play, stress the UI, and write report.json / report.md / report.html."""
     console.print()
@@ -70,6 +74,8 @@ def run(
                 max_sequences=max_sequences,
                 build_cmd=build_cmd,
                 keep_sandbox=keep_sandbox,
+                agent=agent,
+                agent_steps=agent_steps,
                 progress=_progress,
             )
         )

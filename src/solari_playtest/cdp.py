@@ -90,7 +90,11 @@ class CDP:
             msg["sessionId"] = session_id
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         self._pending[mid] = fut
-        await self._ws.send(json.dumps(msg))
+        try:
+            await self._ws.send(json.dumps(msg))
+        except Exception as err:
+            self._pending.pop(mid, None)
+            raise CDPError(f"CDP connection closed while sending {method}: {err}") from err
         res = await asyncio.wait_for(fut, self.timeout_s)
         if "error" in res:
             raise CDPError(f"{method}: {res['error'].get('message')}")
