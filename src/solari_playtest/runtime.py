@@ -52,14 +52,31 @@ class SandboxBuilder:
     async def _exec(
         self, cmd: str, args: list[str], cwd: str | None = None, timeout_ms: int = 300_000
     ) -> dict[str, Any]:
-        res = await self.c.request(
-            "POST",
-            f"/sandboxes/{self.sandbox_id}/exec",
-            {"cmd": cmd, "args": args, "cwd": cwd, "timeoutMs": timeout_ms},
-        )
-        if res.status_code >= 400:
-            raise SolariError(f"exec failed: {res.status_code} {res.text[:200]}", res.status_code)
-        return res.json()
+        """One-shot exec with retries: right after creation the guest can answer
+        502 "exec failed" for a few seconds, and the gateway occasionally 5xxs."""
+        last: SolariError | None = None
+        for attempt in range(8):
+            res = await self.c.request(
+                "POST",
+                f"/sandboxes/{self.sandbox_id}/exec",
+                {"cmd": cmd, "args": args, "cwd": cwd, "timeoutMs": timeout_ms},
+            )
+            if res.status_code < 400:
+                return res.json()
+            last = SolariError(f"exec failed: {res.status_code} {res.text[:200]}", res.status_code)
+            if res.status_code not in (502, 503, 504):
+                raise last
+            await asyncio.sleep(1.5 * (attempt + 1))
+        raise last  # type: ignore[misc]
+
+    async def _wait_ready(self, timeout_s: float = 60) -> None:
+        t0 = time.perf_counter()
+        while time.perf_counter() - t0 < timeout_s:
+            res = await self.c.request("GET", f"/sandboxes/{self.sandbox_id}")
+            state = (res.json() or {}).get("state") if res.status_code < 400 else None
+            if state in ("running", "ready"):
+                return
+            await asyncio.sleep(1.0)
 
     async def sh(self, script: str, timeout_ms: int = 300_000) -> dict[str, Any]:
         return await self._exec("sh", ["-c", script], timeout_ms=timeout_ms)
@@ -91,6 +108,7 @@ class SandboxBuilder:
         if res.status_code >= 400:
             raise SolariError(f"POST /sandboxes failed: {res.status_code} {res.text[:200]}", res.status_code)
         self.sandbox_id = res.json()["sandboxId"]
+        await self._wait_ready()
         log: list[str] = []
         clone_url = repo
         token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
