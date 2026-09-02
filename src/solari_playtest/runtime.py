@@ -81,6 +81,32 @@ class SandboxBuilder:
     async def sh(self, script: str, timeout_ms: int = 300_000) -> dict[str, Any]:
         return await self._exec("sh", ["-c", script], timeout_ms=timeout_ms)
 
+    async def job(self, script: str, timeout_s: float = 900, poll_s: float = 3.0) -> dict[str, Any]:
+        """Run a long command in the background and poll for its exit, so a slow
+        clone or build never trips the gateway's one-shot exec limits."""
+        jid = f"job{int(time.time() * 1000)}"
+        launcher = (
+            f"mkdir -p /tmp/pt && (sh -c {json.dumps(script)} > /tmp/pt/{jid}.log 2>&1; echo $? > /tmp/pt/{jid}.exit) "
+            f"> /dev/null 2>&1 &"
+        )
+        await self._exec("sh", ["-c", launcher], timeout_ms=30_000)
+        t0 = time.perf_counter()
+        while time.perf_counter() - t0 < timeout_s:
+            await asyncio.sleep(poll_s)
+            r = await self._exec(
+                "sh",
+                [
+                    "-c",
+                    f"cat /tmp/pt/{jid}.exit 2>/dev/null; echo ---; tail -c 4000 /tmp/pt/{jid}.log 2>/dev/null",
+                ],
+                timeout_ms=30_000,
+            )
+            out = r.get("stdout", "")
+            code, _, log = out.partition("---\n")
+            if code.strip():
+                return {"exitCode": int(code.strip()), "stdout": log, "stderr": ""}
+        return {"exitCode": 124, "stdout": f"timed out after {timeout_s}s", "stderr": ""}
+
     async def serve_from_git(
         self,
         repo: str,
@@ -118,15 +144,17 @@ class SandboxBuilder:
         clone = (
             f"git clone --depth 1 {branch}{clone_url} /work/game 2>&1 | sed 's#x-access-token:[^@]*@#***@#'"
         )
-        r = await self.sh(clone, 600_000)
+        r = await self.job(clone, timeout_s=600)
         log.append(r.get("stdout", "") + r.get("stderr", ""))
         if r.get("exitCode"):
             raise SolariError(f"git clone failed: {log[-1][-300:]}")
         if ref and re.fullmatch(r"[0-9a-f]{7,40}", ref):
-            r = await self.sh(f"cd /work/game && git fetch --depth 1 origin {ref} && git checkout {ref} 2>&1")
+            r = await self.job(
+                f"cd /work/game && git fetch --depth 1 origin {ref} && git checkout {ref} 2>&1", timeout_s=300
+            )
             log.append(r.get("stdout", "") + r.get("stderr", ""))
         commit = (await self.sh("cd /work/game && git rev-parse HEAD")).get("stdout", "").strip()
-        r = await self.sh(f"cd /work/game && ({build_cmd}) 2>&1 | tail -40", 900_000)
+        r = await self.job(f"cd /work/game && ({build_cmd}) 2>&1 | tail -40", timeout_s=900)
         log.append(r.get("stdout", "") + r.get("stderr", ""))
         if r.get("exitCode"):
             raise SolariError(f"build failed (exit {r.get('exitCode')}): {log[-1][-400:]}")
