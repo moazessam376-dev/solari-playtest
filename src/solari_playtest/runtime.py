@@ -20,6 +20,7 @@ from PIL import Image
 
 from .cdp import CDP, CDPError
 from .client import SolariClient, SolariError
+from .ledger import record as ledger_record
 
 GIT_URL = re.compile(r"^(https?://|git@)[^\s]+?(\.git)?/?$")
 
@@ -296,6 +297,14 @@ class Browser:
     ) -> Game:
         s = await self.c.create_session(recording=recording)
         self.session_id = s.id
+        ledger_record(
+            "create",
+            product="browser",
+            session_id=s.id,
+            host=s.id.split(":", 1)[0],
+            options={"recording": recording, "playtest": True},
+            expires_at=s.expires_at,
+        )
         cdp = CDP(s.cdp_endpoint, timeout_s=30)
         await cdp.connect()
         self._cdp = cdp
@@ -328,8 +337,17 @@ class Browser:
                 await self.c.release_session(game.session_id)
             except SolariError:
                 pass
+            ledger_record("release", product="browser", session_id=game.session_id, ok=False, lost=True)
             s2 = await self.c.create_session(recording=recording)
             self.session_id = s2.id
+            ledger_record(
+                "create",
+                product="browser",
+                session_id=s2.id,
+                host=s2.id.split(":", 1)[0],
+                options={"recording": recording, "playtest": True, "replacement": True},
+                expires_at=s2.expires_at,
+            )
             c2 = CDP(s2.cdp_endpoint, timeout_s=30)
             await c2.connect()
             page2 = await c2.new_page()
@@ -388,10 +406,12 @@ class Browser:
             self._cdp = None
         sid = self.session_id
         if sid:
+            ok = True
             try:
                 await self.c.release_session(sid)
             except SolariError:
-                pass
+                ok = False
+            ledger_record("release", product="browser", session_id=sid, ok=ok)
             self.session_id = None
         return sid
 
