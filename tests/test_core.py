@@ -12,6 +12,8 @@ def test_key_params():
     assert _key_params("escape") == ("Escape", "Escape", "")
     assert _key_params(" ") == (" ", "Space", " ")
     assert _key_params("arrowleft") == ("ArrowLeft", "ArrowLeft", "")
+    assert _key_params("space") == (" ", "Space", " ")
+    assert _key_params("Esc") == ("Escape", "Escape", "")
 
 
 def _panel(sel, h=400, w=320, open=True, visible=True, inside=True):

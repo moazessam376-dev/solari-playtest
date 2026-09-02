@@ -69,8 +69,21 @@ KEY_CODES = {
 }
 
 
+KEY_ALIASES = {
+    "space": " ",
+    "spacebar": " ",
+    "esc": "escape",
+    "return": "enter",
+    "up": "arrowup",
+    "down": "arrowdown",
+    "left": "arrowleft",
+    "right": "arrowright",
+}
+
+
 def _key_params(key: str) -> tuple[str, str, str]:
-    k = key.lower()
+    k = key.strip().lower()
+    k = KEY_ALIASES.get(k, k)
     if k in KEY_CODES:
         code, text = KEY_CODES[k]
         name = {
