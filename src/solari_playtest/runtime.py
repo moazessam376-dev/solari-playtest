@@ -289,12 +289,12 @@ class Game:
                 raise
         try:
             await self.recover()
-        except Exception as err2:  # noqa: BLE001 - the session itself is gone (gateway 404): start a new one
+        except Exception as err2:
             if self.reopen is None:
                 raise SessionLost(f"CDP recovery failed: {err2}") from err2
             try:
                 await self.reopen()
-            except Exception as err3:  # noqa: BLE001
+            except Exception as err3:
                 raise SessionLost(f"could not open a replacement session: {err3}") from err3
             self.restarts += 1
             raise SessionLost("browser session was lost and replaced; redo the current step") from err2
