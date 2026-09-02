@@ -82,7 +82,7 @@ KEY_ALIASES = {
 
 
 def _key_params(key: str) -> tuple[str, str, str]:
-    k = key.strip().lower()
+    k = key.lower() if key.isspace() else key.strip().lower()
     k = KEY_ALIASES.get(k, k)
     if k in KEY_CODES:
         code, text = KEY_CODES[k]
