@@ -13,7 +13,7 @@ import yaml
 from .client import SolariClient
 from .explore import Explorer
 from .report import write_html, write_json, write_markdown
-from .runtime import Browser, SandboxBuilder, Served, looks_like_git
+from .runtime import Browser, SandboxBuilder, Served, SessionLost, looks_like_git
 from .tools import Tools
 
 
@@ -65,7 +65,10 @@ async def playtest(
         ex = Explorer(tools, hints=hints, on_progress=progress)
 
         async def fresh() -> None:
-            await game.cdp.send("Page.reload", {"ignoreCache": False}, session_id=game.page)
+            try:
+                await game.send("Page.reload", {"ignoreCache": False})
+            except SessionLost:
+                pass  # a new session is already open on the game URL
             for _ in range(40):
                 await asyncio.sleep(0.25)
                 if await game.evaluate("document.readyState") == "complete":
@@ -108,6 +111,7 @@ async def playtest(
                 progress("stress", f"aborted: {meta['aborted']}")
             sequences = min(max_sequences, _count_sequences(len([c for c in controls if c.opens]), depth))
             meta["cdp_recoveries"] = game.recoveries
+            meta["session_restarts"] = game.restarts
         finally:
             sid = await browser.close()
             meta["replay_url"] = await browser.replay_url(sid) if sid else None
