@@ -274,18 +274,31 @@ class Game:
         )
 
     async def send(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        """CDP call on the page with one automatic recovery on a dropped socket."""
+        """CDP call on the page. On a dropped socket: reconnect; if the session is
+        gone from the gateway: open a replacement and raise SessionLost so the
+        caller redoes its step."""
         try:
             return await self.cdp.send(method, params, session_id=self.page)
         except (TimeoutError, CDPError, OSError) as err:
+            text = str(err).lower()
             if (
-                "closed" not in str(err).lower()
-                and "not connected" not in str(err).lower()
+                "closed" not in text
+                and "not connected" not in text
                 and not isinstance(err, asyncio.TimeoutError)
             ):
                 raise
+        try:
             await self.recover()
-            return await self.cdp.send(method, params, session_id=self.page)
+        except Exception as err2:  # noqa: BLE001 - the session itself is gone (gateway 404): start a new one
+            if self.reopen is None:
+                raise SessionLost(f"CDP recovery failed: {err2}") from err2
+            try:
+                await self.reopen()
+            except Exception as err3:  # noqa: BLE001
+                raise SessionLost(f"could not open a replacement session: {err3}") from err3
+            self.restarts += 1
+            raise SessionLost("browser session was lost and replaced; redo the current step") from err2
+        return await self.cdp.send(method, params, session_id=self.page)
 
     async def evaluate(self, js: str) -> Any:
         res = await self.send(
