@@ -75,7 +75,7 @@ async def playtest(
 
         ex.fresh = fresh
         meta: dict[str, Any] = {
-            "target": target,
+            "target": target.split("?")[0],
             "url": url.split("?")[0],
             "commit": served.commit if served else None,
             "viewport": f"{viewport[0]}x{viewport[1]}",

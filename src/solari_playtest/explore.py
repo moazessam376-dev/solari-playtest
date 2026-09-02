@@ -176,7 +176,7 @@ class Explorer:
                 existing.evidence["confirmed_from_fresh_load"] = True
             return
         self._n += 1
-        f = Finding(f"F{self._n}", sev, title, seq, evidence, selectors, hypothesis, falsifier, shots)
+        f = Finding(f"F{self._n}", sev, title, list(seq), evidence, selectors, hypothesis, falsifier, shots)
         f.evidence["confirmed_from_fresh_load"] = confirmed
         self.findings.append(f)
         self.progress("finding", title)
@@ -187,7 +187,7 @@ class Explorer:
         the last fresh load, which is the honest repro."""
         history = list(self.history)
         if self.fresh is None or self._confirming:
-            return True, seq
+            return True, list(seq)
         self._confirming = True
         try:
             await self.fresh()
