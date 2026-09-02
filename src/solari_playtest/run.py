@@ -44,7 +44,7 @@ async def playtest(
     hints = hints or {}
     out = out or Path("runs") / time.strftime("%Y%m%d-%H%M%S")
     out.mkdir(parents=True, exist_ok=True)
-    client = SolariClient()
+    client = SolariClient(timeout_s=180)  # sandbox create and exec can take a while on a slow gateway
     builder: SandboxBuilder | None = None
     served: Served | None = None
     url = target

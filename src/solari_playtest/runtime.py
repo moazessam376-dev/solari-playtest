@@ -78,6 +78,30 @@ class SandboxBuilder:
                 return
             await asyncio.sleep(1.0)
 
+    async def _create(self, cpu: int, mem_mb: int, timeout_min: int) -> str:
+        """`POST /sandboxes` with retries: the pool answers 503 or takes minutes when busy."""
+        body = {
+            "template": "base",
+            "kind": "sandbox",
+            "cpu": cpu,
+            "memMb": mem_mb,
+            "timeoutMs": timeout_min * 60_000,
+        }
+        last = "no attempt"
+        for attempt in range(4):
+            try:
+                res = await self.c.request("POST", "/sandboxes", body)
+            except httpx.HTTPError as err:
+                last = f"{type(err).__name__}: {err}"
+            else:
+                if res.status_code < 400:
+                    return res.json()["sandboxId"]
+                last = f"{res.status_code} {res.text[:160]}"
+                if res.status_code not in (502, 503, 504, 429):
+                    break
+            await asyncio.sleep(5 * (attempt + 1))
+        raise SolariError(f"POST /sandboxes failed after retries: {last}")
+
     async def sh(self, script: str, timeout_ms: int = 300_000) -> dict[str, Any]:
         return await self._exec("sh", ["-c", script], timeout_ms=timeout_ms)
 
@@ -120,20 +144,7 @@ class SandboxBuilder:
         timeout_min: int = 30,
     ) -> Served:
         t0 = time.perf_counter()
-        res = await self.c.request(
-            "POST",
-            "/sandboxes",
-            {
-                "template": "base",
-                "kind": "sandbox",
-                "cpu": cpu,
-                "memMb": mem_mb,
-                "timeoutMs": timeout_min * 60_000,
-            },
-        )
-        if res.status_code >= 400:
-            raise SolariError(f"POST /sandboxes failed: {res.status_code} {res.text[:200]}", res.status_code)
-        self.sandbox_id = res.json()["sandboxId"]
+        self.sandbox_id = await self._create(cpu, mem_mb, timeout_min)
         await self._wait_ready()
         log: list[str] = []
         clone_url = repo
