@@ -46,6 +46,7 @@ class SandboxBuilder:
     def __init__(self, client: SolariClient) -> None:
         self.c = client
         self.sandbox_id: str | None = None
+        self.port: int = 4173
 
     async def _exec(
         self, cmd: str, args: list[str], cwd: str | None = None, timeout_ms: int = 300_000
@@ -125,7 +126,14 @@ class SandboxBuilder:
                 except httpx.HTTPError:
                     pass
                 await asyncio.sleep(2)
+        self.port = port
         return Served(self.sandbox_id, url, commit, "\n".join(log), time.perf_counter() - t0)
+
+    async def preview_url(self, port: int) -> str:
+        res = await self.c.request("GET", f"/sandboxes/{self.sandbox_id}/ports/{port}")
+        if res.status_code >= 400:
+            raise SolariError(f"preview url failed: {res.status_code} {res.text[:200]}", res.status_code)
+        return res.json()["url"]
 
     async def kill(self) -> None:
         if self.sandbox_id:
@@ -167,6 +175,15 @@ class Game:
     recoveries: int = 0
     restarts: int = 0
     reopen: Any = None  # async callable set by Browser.open: new session on the same URL
+    refresh_url: Any = None  # async callable returning a fresh game URL (preview tokens expire)
+
+    async def current_url(self) -> str:
+        if self.refresh_url is not None:
+            try:
+                self.url = await self.refresh_url()
+            except Exception:  # noqa: BLE001 - keep the old one
+                pass
+        return self.url
 
     async def recover(self) -> None:
         """The gateway sometimes drops the CDP websocket mid-session while the
@@ -324,7 +341,7 @@ class Browser:
             for dom in ("Page", "Runtime", "Log"):
                 await c2.send(f"{dom}.enable", session_id=page2)
             c2.on_event(lambda m: Browser._observe(game, m))
-            await c2.send("Page.navigate", {"url": url}, session_id=page2)
+            await c2.send("Page.navigate", {"url": await game.current_url()}, session_id=page2)
             for _ in range(60):
                 if await c2.evaluate(page2, "document.readyState") == "complete":
                     break

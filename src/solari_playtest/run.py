@@ -61,12 +61,14 @@ async def playtest(
         browser = Browser(client)
         progress("open", f"opening {url.split('?')[0]}")
         game = await browser.open(url, width=viewport[0], height=viewport[1], run_dir=out)
+        if builder is not None:
+            game.refresh_url = lambda: builder.preview_url(builder.port)
         tools = Tools(game)
         ex = Explorer(tools, hints=hints, on_progress=progress)
 
         async def fresh() -> None:
             try:
-                await game.send("Page.reload", {"ignoreCache": False})
+                await game.send("Page.navigate", {"url": await game.current_url()})
             except SessionLost:
                 pass  # a new session is already open on the game URL
             for _ in range(40):
@@ -100,11 +102,12 @@ async def playtest(
                 }
             )
             await tools.screenshot("after start")
-            progress("discover", "probing keys and buttons")
-            controls = await ex.discover(keys=hints.get("keys"), buttons=hints.get("buttons", True))
-            progress("discover", f"{len(controls)} controls: " + ", ".join(c.label() for c in controls))
-            progress("stress", "running open/close sequences")
+            controls = []
             try:
+                progress("discover", "probing keys and buttons")
+                controls = await ex.discover(keys=hints.get("keys"), buttons=hints.get("buttons", True))
+                progress("discover", f"{len(controls)} controls: " + ", ".join(c.label() for c in controls))
+                progress("stress", "running open/close sequences")
                 await ex.ui_stress(depth=depth, max_sequences=max_sequences)
             except Exception as err:  # noqa: BLE001 - keep what was found
                 meta["aborted"] = f"{type(err).__name__}: {str(err)[:200]}"
