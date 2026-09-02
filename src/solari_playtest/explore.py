@@ -330,6 +330,23 @@ class Explorer:
 
     # --- invariants ---------------------------------------------------------------------
 
+    async def _settles_inside(self, sel: str, tries: int = 4) -> bool:
+        """A panel that was just given `.open` may still be sliding in from off-screen.
+        Re-measure a few times before calling it off-viewport; also accept a panel
+        that finished its move (rect stable) but was designed to hang off an edge
+        by a few pixels."""
+        last = None
+        for _ in range(tries):
+            await asyncio.sleep(self.settle)
+            now = _open_map(await self.t.snapshot()).get(sel)
+            if now is None or now["inside"]:
+                return True
+            rect = (now["x"], now["y"], now["w"], now["h"])
+            if rect == last:  # stopped moving and still outside: a real finding
+                return False
+            last = rect
+        return False
+
     async def _check(self, seq: list[dict[str, Any]], focus: str | None, before_errors: int) -> None:
         snap = await self.t.snapshot()
         open_now = _open_map(snap)
@@ -374,7 +391,7 @@ class Explorer:
                     f"Reproduce and compare heights: if {sel} is within 20% of {ref['h']} px the finding is wrong.",
                     shots,
                 )
-            if not p["inside"]:
+            if not p["inside"] and not await self._settles_inside(sel):
                 shots.append(await self.t.screenshot(f"offscreen {sel}"))
                 self._finding(
                     "medium",

@@ -207,3 +207,45 @@ def test_reports(tmp_path):
 def test_control_label():
     assert Control("key", "r", {"key": "r"}).label() == "key:r"
     assert Path(__file__).exists()
+
+
+async def test_sliding_panel_is_not_reported_off_viewport():
+    """A panel that is still animating in from off-screen must not be a finding."""
+    t = FakeTools()
+    frames = {"n": 0}
+    orig = t.snapshot
+
+    async def snapshot(**k):
+        s = await orig(**k)
+        for p in s.panels:
+            if p["sel"] == "div.log" and p["open"]:
+                frames["n"] += 1
+                if frames["n"] <= 2:  # first two reads: mid-transition, off the left edge
+                    p["x"], p["inside"] = -300, False
+        return s
+
+    t.snapshot = snapshot  # type: ignore[method-assign]
+    ex = Explorer(t, settle=0.0)  # type: ignore[arg-type]
+    await ex.discover(keys=["l"], buttons=False)
+    frames["n"] = 0
+    await t.press("l")
+    await ex._check([{"action": {"key": "l"}, "intent": "open"}], "div.log", 0)
+    assert not [f for f in ex.findings if "outside the viewport" in f.title]
+
+
+async def test_stuck_panel_is_reported_off_viewport():
+    t = FakeTools()
+    orig = t.snapshot
+
+    async def snapshot(**k):
+        s = await orig(**k)
+        for p in s.panels:
+            if p["sel"] == "div.log" and p["open"]:
+                p["x"], p["inside"] = -300, False
+        return s
+
+    t.snapshot = snapshot  # type: ignore[method-assign]
+    ex = Explorer(t, settle=0.0)  # type: ignore[arg-type]
+    await t.press("l")
+    await ex._check([{"action": {"key": "l"}, "intent": "open"}], "div.log", 0)
+    assert [f for f in ex.findings if "outside the viewport" in f.title]
