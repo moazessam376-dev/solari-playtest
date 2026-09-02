@@ -1,0 +1,5 @@
+# Hints for vault-team (https://github.com/moazessam376-dev/vault-team)
+start_button: Open the Vault
+keys: [b, r, l, m, a, f, escape, " ", "0", "1", "2", "3"]
+build_cmd: npm install --no-audit --no-fund && npx vite build
+serve_dir: dist

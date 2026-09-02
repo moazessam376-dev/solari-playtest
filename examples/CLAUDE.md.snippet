@@ -1,0 +1,8 @@
+## Playtesting
+
+This project is playtested on Solari through the `playtest` MCP server.
+
+- After any change to UI, input handling or panels, call `playtest_run` with this repo's URL and the current commit.
+- Treat every finding with severity high or medium as a bug to fix now. Use the finding's sequence to reproduce, its hypothesis as the starting point, and its falsifier as the acceptance test.
+- After fixing, call `playtest_run` again; the finding must not reappear.
+- Use `playtest_open` plus the primitives (`playtest_ui`, `playtest_press`, `playtest_click`, `playtest_measure`, `playtest_screenshot`) to investigate anything the automatic pass cannot reach, such as objects drawn on the canvas.

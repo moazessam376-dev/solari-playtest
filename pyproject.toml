@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "solari-playtest"
+version = "0.1.0"
+description = "Playtest agent for web games on Solari: build from git in a sandbox, play in a cloud Chrome, stress-test the UI, report to your coding agent over MCP."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11,<4.0"
+authors = [{ name = "Moaz Essam" }]
+keywords = ["solari", "playtest", "game qa", "mcp", "browser-use", "three.js"]
+dependencies = [
+  "typer>=0.12",
+  "rich>=13.7",
+  "httpx>=0.27",
+  "websockets>=12",
+  "pillow>=10",
+  "numpy>=1.26",
+  "pyyaml>=6",
+  "mcp>=1.2",
+]
+
+[project.optional-dependencies]
+agent = ["browser-use>=0.13,<0.14", "solari-browser-use"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "respx>=0.21", "ruff>=0.6"]
+
+[project.scripts]
+playtest = "solari_playtest.cli:app"
+playtest-mcp = "solari_playtest.mcp_server:main"
+
+[project.urls]
+Homepage = "https://github.com/moazessam376-dev/solari-playtest"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/solari_playtest"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+ignore = ["B008", "PYI034", "S110", "S112", "RUF046", "E731"]
