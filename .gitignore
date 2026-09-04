@@ -13,3 +13,4 @@ replays/
 screenshots/
 FINDINGS*.md
 runs/
+.DS_Store
